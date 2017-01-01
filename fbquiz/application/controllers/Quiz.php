@@ -26,44 +26,196 @@ class Quiz extends CI_Controller {
         array("CN", "EN", "JP", "RS"),
     );
 
+    public $langQuestion = array(
+        "en" => array('q1', 'q2', 'q3'),
+        "ar" => array('q1', 'q2'),
+        "cn" => array('q1', 'q2', 'q3'),
+        "jp" => array('q1', 'q3'),
+        "rs" => array('q1', 'q3'),
+    );
+
     public $buttonClass = array("default", "primary", "success", "info", "warning", "danger");
+    private $fb;
 
-    public function index($arg1)
+    public function __construct()
     {
-        echo $arg1;
-        exit();
+        parent::__construct();
 
-        $this->load->view('welcome_message');
-    }
+        $this->load->helper('cookie');
 
-    public function q($q, $lang) {
-
-        $fb = new Facebook\Facebook([
+        session_start();
+        $this->fb = $fb = new Facebook\Facebook([
             'app_id' => '746616388822438',
             'app_secret' => '70ee0bddaba5f6daf7e79fadaf6bf530',
-            'default_graph_version' => 'v2.5',
+            'default_graph_version' => 'v2.2',
         ]);
+    }
+
+    private function requireFBLogin($q, $lang) {
+
+
+//        $helper = $fb->getRedirectLoginHelper();
+//
+//        $permissions = ['email']; // Optional permissions
+//        $loginUrl = $helper->getLoginUrl('https://www.zaapam.com/fbquiz/quiz/1/en/', $permissions);
+//        echo $loginUrl;
+//        exit();
+
+        $result = array();
+        $helper = $this->fb->getCanvasHelper();
+
+        try {
+            $accessToken = $helper->getAccessToken();
+        } catch(Facebook\Exceptions\FacebookResponseException $e) {
+            // When Graph returns an error
+            echo 'Graph returned an error: ' . $e->getMessage();
+            exit;
+        } catch(Facebook\Exceptions\FacebookSDKException $e) {
+            // When validation fails or other local issues
+            echo 'Facebook SDK returned an error: ' . $e->getMessage();
+            exit;
+        }
+
+        if (! isset($accessToken)) {
+            //echo 'No OAuth data could be obtained from the signed request. User has not authorized your app yet.';
+            //exit;
+            $helper = $this->fb->getRedirectLoginHelper();
+            $permissions = ['email', 'publish_actions'];
+            $loginUrl = $helper->getLoginUrl('https://apps.facebook.com/746616388822438/?q=' . $q . '&lang=' . $lang, $permissions);
+            echo "<script>window.top.location = '" . $loginUrl . "'</script>";
+            exit();
+        } else {
+            // Logged in
+            $result['signed_request'] = $helper->getSignedRequest();
+            $result['access_token'] = $accessToken->getValue();
+        }
+
+        return $result;
+    }
+
+    function parse_signed_request($signed_request) {
+        list($encoded_sig, $payload) = explode('.', $signed_request, 2);
+
+        $secret = "70ee0bddaba5f6daf7e79fadaf6bf530"; // Use your app secret here
+
+        // decode the data
+        $sig = $this->base64_url_decode($encoded_sig);
+        $data = json_decode($this->base64_url_decode($payload), true);
+
+        // confirm the signature
+        $expected_sig = hash_hmac('sha256', $payload, $secret, $raw = true);
+        if ($sig !== $expected_sig) {
+            error_log('Bad Signed JSON signature!');
+            return null;
+        }
+
+        return $data;
+    }
+
+    function base64_url_decode($input) {
+        return base64_decode(strtr($input, '-_', '+/'));
+    }
+
+//    public function index($arg1)
+//    {
+//        echo $arg1;
+//        exit();
+//
+//        $this->load->view('welcome_message');
+//    }
+
+    public function index() {
 
         //print_r($this->load->view('layouts/meta'));
         //exit();
 
-        $langs = $this->questionLang[$q - 1];
-        $index = array_search($lang, $langs);
-        array_splice($langs, $index, 1);
+        $q = ($_GET['q']) ? $_GET['q'] : 0;
+        $lang = ($_GET['lang']) ? strtolower($_GET['lang']) : 'en';
+//        $signed_request = $_POST['signed_request'];
+//        $fb_params = $this->parse_signed_request($signed_request);
+//        setcookie('access_token', $fb_params['oauth_token'], 0, "/");
+
+        //echo "Hello";
+        //print_r($fb_params);
+        //exit();
+
+        $token = $this->requireFBLogin($q, $lang);
+        setcookie('access_token', $token['access_token'], 0, "/");
 
         $base_url = $this->config->item('base_url');
+        $assets_url = $this->config->item('assets_url');
 
-        $data = array(
-            "layout_meta" => $this->load->view('layouts/meta', array("base_url" => $base_url), TRUE),
-            "layout_footer" => $this->load->view('layouts/footer', array("base_url" => $base_url), TRUE),
-            "content" => $this->load->view('quiz/' . $lang . '/q' . $q, '', TRUE),
-            "q" => $q,
-            "lang" => $lang,
-            "support_langs" => $langs,
-            "btn_colors" => $this->buttonClass,
+        if ($q == 0) {
+            $langs = $this->questionLang[0];
+            $index = array_search($lang, $langs);
+            array_splice($langs, $index, 1);
+
+            $questions = array();
+            foreach ($this->langQuestion[$lang] as $r) {
+                $questions[] = $this->getQuestionInfo($r);
+            }
+
+            $data = array(
+                "base_url" => $base_url,
+                "assets_url" => $assets_url,
+                "layout_meta" => $this->load->view('layouts/meta', array("assets_url" => $assets_url), TRUE),
+                "layout_footer" => $this->load->view('layouts/footer', array("assets_url" => $assets_url), TRUE),
+                "questions" => $questions,
+                "lang" => $lang,
+                "support_langs" => $langs,
+                "btn_colors" => $this->buttonClass,
+            );
+
+            $this->load->view('quiz/archive', $data);
+        } else {
+            $langs = $this->questionLang[$q - 1];
+            $index = array_search($lang, $langs);
+            array_splice($langs, $index, 1);
+            $info = $this->getQuestionInfo("q" . $q);
+
+            $data = array(
+                "base_url" => $base_url,
+                "assets_url" => $assets_url,
+                "layout_meta" => $this->load->view('layouts/meta', array("assets_url" => $assets_url), TRUE),
+                "layout_footer" => $this->load->view('layouts/footer', array("assets_url" => $assets_url), TRUE),
+                "content" => $this->load->view('quiz/' . $lang . '/q' . $q, array("base_url" => $base_url, "question" => $info), TRUE),
+                "q" => $q,
+                "lang" => $lang,
+                "support_langs" => $langs,
+                "btn_colors" => $this->buttonClass,
+            );
+
+            $this->load->view('quiz/index', $data);
+        }
+
+    }
+
+    public function share() {
+        $lang = $_POST['lang'];
+        $link = $_POST['link'];
+        $picture = $_POST['pic'];
+        $caption = $_POST['caption'];
+        $title = $_POST['title'];
+
+        /// Publish on Facebook
+        $token = $_COOKIE['access_token'];
+        $this->fb->sendRequest(
+            'POST',
+            '/me/feed',
+            array(
+                'link' => $link,
+                'picture' => $picture,
+                'name' => $title,
+                'caption' => $caption
+            ),
+            $token
         );
 
-        $this->load->view('quiz/index', $data);
+        echo json_encode(
+            array(
+                "result" => "1"
+            )
+        );
     }
 
     public function result($q, $lang) {
@@ -86,26 +238,36 @@ class Quiz extends CI_Controller {
         $score = $q1 + $q2 + $q3 + $q4 + $q5;
 
         if ($score <= 5) {
-            $img_src = "/a/imgs/r/1/" . $lang . "/1.jpg";
+            $img_src = "imgs/r/1/" . $lang . "/1.jpg";
             $info = $this->getResultInfo("q1", $lang, 1);
         } elseif ($score <= 10) {
-            $img_src = "/a/imgs/r/1/" . $lang . "/2.jpg";
+            $img_src = "imgs/r/1/" . $lang . "/2.jpg";
             $info = $this->getResultInfo("q1", $lang, 2);
         } elseif ($score <= 15) {
-            $img_src = "/a/imgs/r/1/" . $lang . "/3.jpg";
+            $img_src = "imgs/r/1/" . $lang . "/3.jpg";
             $info = $this->getResultInfo("q1", $lang, 3);
         } elseif ($score <= 20) {
-            $img_src = "/a/imgs/r/1/" . $lang . "/4.jpg";
+            $img_src = "imgs/r/1/" . $lang . "/4.jpg";
             $info = $this->getResultInfo("q1", $lang, 4);
         } else {
-            $img_src = "/a/imgs/r/1/" . $lang . "/5.jpg";
+            $img_src = "imgs/r/1/" . $lang . "/5.jpg";
             $info = $this->getResultInfo("q1", $lang, 5);
         }
 
+        $base_url = $this->config->item('base_url');
+        $assets_url = $this->config->item('assets_url');
+
         $data = array(
-            "question" => $this->getQuestionInfo("q1", $lang),
-            "layout_meta" => $this->load->view('layouts/meta', '', TRUE),
-            "layout_footer" => $this->load->view('layouts/footer', '', TRUE),
+            'link' => 'https://apps.facebook.com/746616388822438?q=1&lang=' . $lang,
+            'picture' => $assets_url . $img_src,
+            'caption' => $info['title'],
+            'title' => $this->getQuestionInfo("q1")[$lang],
+            "base_url" => $base_url,
+            "lang" => $lang,
+            "assets_url" => $assets_url,
+            "question" => $this->getQuestionInfo("q1"),
+            "layout_meta" => $this->load->view('layouts/meta', array("assets_url" => $assets_url), TRUE),
+            "layout_footer" => $this->load->view('layouts/footer', array("assets_url" => $assets_url), TRUE),
             "img_src" => $img_src,
             "info" => $info,
         );
@@ -122,23 +284,33 @@ class Quiz extends CI_Controller {
         $score = $q1 + $q2 + $q3 + $q4;
 
         if ($score <= 4) {
-            $img_src = "/a/imgs/r/2/" . $lang . "/1.jpg";
+            $img_src = "imgs/r/2/" . $lang . "/1.jpg";
             $info = $this->getResultInfo("q2", $lang, 1);
         } elseif ($score <= 8) {
-            $img_src = "/a/imgs/r/2/" . $lang . "/2.jpg";
+            $img_src = "imgs/r/2/" . $lang . "/2.jpg";
             $info = $this->getResultInfo("q2", $lang, 2);
         } elseif ($score <= 12) {
-            $img_src = "/a/imgs/r/2/" . $lang . "/3.jpg";
+            $img_src = "imgs/r/2/" . $lang . "/3.jpg";
             $info = $this->getResultInfo("q2", $lang, 3);
         } else {
-            $img_src = "/a/imgs/r/2/" . $lang . "/4.jpg";
+            $img_src = "imgs/r/2/" . $lang . "/4.jpg";
             $info = $this->getResultInfo("q2", $lang, 4);
         }
 
+        $base_url = $this->config->item('base_url');
+        $assets_url = $this->config->item('assets_url');
+
         $data = array(
-            "question" => $this->getQuestionInfo("q2", $lang),
-            "layout_meta" => $this->load->view('layouts/meta', '', TRUE),
-            "layout_footer" => $this->load->view('layouts/footer', '', TRUE),
+            'link' => 'https://apps.facebook.com/746616388822438?q=2&lang=' . $lang,
+            'picture' => $assets_url . $img_src,
+            'caption' => $info['title'],
+            'title' => $this->getQuestionInfo("q2")[$lang],
+            "base_url" => $base_url,
+            "lang" => $lang,
+            "assets_url" => $assets_url,
+            "question" => $this->getQuestionInfo("q2"),
+            "layout_meta" => $this->load->view('layouts/meta', array("assets_url" => $assets_url), TRUE),
+            "layout_footer" => $this->load->view('layouts/footer', array("assets_url" => $assets_url), TRUE),
             "img_src" => $img_src,
             "info" => $info,
         );
@@ -146,13 +318,102 @@ class Quiz extends CI_Controller {
         $this->load->view('quiz/result', $data);
     }
 
-    private function renderA3() {
+    private function renderA3($lang) {
 
+        $q1 = $this->input->post("q1");
+        $zodiac = $q1 % 12;
+
+        switch ($zodiac) {
+            case 1:
+                $img_src = "imgs/r/3/" . $lang . "/10.jpg";
+                $info = $this->getResultInfo("q3", $lang, 10);
+                break;
+            case 2:
+                $img_src = "imgs/r/3/" . $lang . "/11.jpg";
+                $info = $this->getResultInfo("q3", $lang, 11);
+                break;
+            case 3:
+                $img_src = "imgs/r/3/" . $lang . "/12.jpg";
+                $info = $this->getResultInfo("q3", $lang, 12);
+                break;
+            case 4:
+                $img_src = "imgs/r/3/" . $lang . "/1.jpg";
+                $info = $this->getResultInfo("q3", $lang, 1);
+                break;
+            case 5:
+                $img_src = "imgs/r/3/" . $lang . "/2.jpg";
+                $info = $this->getResultInfo("q3", $lang, 2);
+                break;
+            case 6:
+                $img_src = "imgs/r/3/" . $lang . "/3.jpg";
+                $info = $this->getResultInfo("q3", $lang, 3);
+                break;
+            case 7:
+                $img_src = "imgs/r/3/" . $lang . "/4.jpg";
+                $info = $this->getResultInfo("q3", $lang, 4);
+                break;
+            case 8:
+                $img_src = "imgs/r/3/" . $lang . "/5.jpg";
+                $info = $this->getResultInfo("q3", $lang, 5);
+                break;
+            case 9:
+                $img_src = "imgs/r/3/" . $lang . "/6.jpg";
+                $info = $this->getResultInfo("q3", $lang, 6);
+                break;
+            case 10:
+                $img_src = "imgs/r/3/" . $lang . "/7.jpg";
+                $info = $this->getResultInfo("q3", $lang, 7);
+                break;
+            case 11:
+                $img_src = "imgs/r/3/" . $lang . "/8.jpg";
+                $info = $this->getResultInfo("q3", $lang, 8);
+                break;
+
+            default:
+                $img_src = "imgs/r/3/" . $lang . "/9.jpg";
+                $info = $this->getResultInfo("q3", $lang, 9);
+        }
+
+
+        $base_url = $this->config->item('base_url');
+        $assets_url = $this->config->item('assets_url');
+
+        /// Publish on Facebook
+        /*$token = $_COOKIE['access_token'];
+        $this->fb->sendRequest(
+            'POST',
+            '/me/feed',
+            array(
+                'link' => 'https://apps.facebook.com/746616388822438?q=3&lang=' . $lang,
+                'picture' => $assets_url . $img_src,
+                'caption' => $this->getQuestionInfo("q3")[$lang]
+            ),
+            $token
+        );*/
+
+        $data = array(
+            'link' => 'https://apps.facebook.com/746616388822438?q=3&lang=' . $lang,
+            'picture' => $assets_url . $img_src,
+            'caption' => $info['title'],
+            'title' => $this->getQuestionInfo("q3")[$lang],
+            "base_url" => $base_url,
+            "lang" => $lang,
+            "assets_url" => $assets_url,
+            "question" => $this->getQuestionInfo("q3"),
+            "layout_meta" => $this->load->view('layouts/meta', array("assets_url" => $assets_url), TRUE),
+            "layout_footer" => $this->load->view('layouts/footer', array("assets_url" => $assets_url), TRUE),
+            "img_src" => $img_src,
+            "info" => $info,
+        );
+
+        $this->load->view('quiz/result', $data);
     }
 
-    private function getQuestionInfo($q, $lang) {
+    private function getQuestionInfo($q) {
         $data = [
             "q1" => [
+                "id" => 1,
+                "thumb" => "imgs/thumbs/1.jpg",
                 "ar" => "يلند اعثر على وجهتك المثالية في تا",
                 "cn" => "泰国哪个外府才适合你性格？",
                 "en" => "Find your perfect destination in Thailand",
@@ -160,11 +421,15 @@ class Quiz extends CI_Controller {
                 "rs" => "Найдите своё идеальное место в Таиланде ",
             ],
             "q2" => [
+                "id" => 2,
+                "thumb" => "imgs/thumbs/2.jpg",
                 "ar" => "ماهو طبقك التا يلندي المفضل ؟",
                 "cn" => "那道菜属于你的性格？",
                 "en" => "What Thai dish are you?",
             ],
             "q3" => [
+                "id" => 3,
+                "thumb" => "imgs/thumbs/3.jpg",
                 "cn" => "你的属相在泰该去哪座寺庙拜佛？",
                 "en" => "Where is the right Temple for you to take a visit too…",
                 "jp" => "あなたにとって訪れるべき寺院は・・・",
@@ -172,7 +437,7 @@ class Quiz extends CI_Controller {
             ],
         ];
 
-        return $data[$q][$lang];
+        return $data[$q];
     }
 
     private function getResultInfo($q, $lang, $a) {

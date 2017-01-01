@@ -23,7 +23,14 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 | a PHP script and you can easily do that on your own.
 |
 */
-$config['base_url'] = 'http://local.zaapam.com/fbquiz/';
+if ($_SERVER['HTTP_HOST'] == 'www.zaapam.com') {
+    $config['base_url'] = 'https://www.zaapam.com/fbquiz/';
+    $config['assets_url'] = 'https://www.zaapam.com/fbquiz/a/';
+} else {
+    $config['base_url'] = 'http://local.zaapam.com/fbquiz/';
+    $config['assets_url'] = 'http://local.zaapam.com/fbquiz/a/';
+}
+
 
 /*
 |--------------------------------------------------------------------------

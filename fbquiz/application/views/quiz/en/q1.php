@@ -1,10 +1,10 @@
 <!-- Heading Row -->
 <div class="row">
-    <div class="col-md-4">
-        <img class="img-responsive img-rounded" src="http://placehold.it/900x350" alt="">
+    <div class="col-sm-4">
+        <img class="img-responsive img-rounded" src="<?= $assets_url ?><?= $question['thumb'] ?>" alt="">
     </div>
     <!-- /.col-md-8 -->
-    <div class="col-md-8">
+    <div class="col-sm-8">
         <h1>Find your perfect destination in Thailand</h1>
     </div>
     <!-- /.col-md-4 -->
@@ -14,7 +14,7 @@
 <hr>
 
 <!-- Content Row -->
-<form action="/quiz/result/1/en/" method="post">
+<form action="<?= $base_url ?>quiz/result/1/en/" method="post">
     <div class="row">
         <div class="col-md-12">
             <h2>1. What would be the first thing you’d want to eat once you landed?</h2>

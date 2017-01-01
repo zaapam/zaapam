@@ -1,10 +1,10 @@
 <!-- Heading Row -->
 <div class="row">
-    <div class="col-md-4">
-        <img class="img-responsive img-rounded" src="http://placehold.it/900x350" alt="">
+    <div class="col-sm-4">
+        <img class="img-responsive img-rounded" src="<?= $assets_url ?><?= $question['thumb'] ?>" alt="">
     </div>
     <!-- /.col-md-8 -->
-    <div class="col-md-8">
+    <div class="col-sm-8">
         <h1>泰国哪个外府才适合你性格？</h1>
     </div>
     <!-- /.col-md-4 -->
@@ -14,7 +14,7 @@
 <hr>
 
 <!-- Content Row -->
-<form action="/quiz/result/1/cn/" method="post">
+<form action="<?= $base_url ?>quiz/result/1/cn/" method="post">
     <div class="row">
         <div class="col-md-12">
             <h2>1. 到达后要先尝尝。。。</h2>

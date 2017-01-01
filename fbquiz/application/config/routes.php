@@ -52,5 +52,5 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 $route['default_controller'] = 'welcome';
 $route['404_override'] = '';
 $route['translate_uri_dashes'] = FALSE;
-$route['quiz/(:num)/(:any)'] = 'quiz/q/$1/$2';
+//$route['quiz/(:num)/(:any)'] = 'quiz/q/$1/$2';
 
